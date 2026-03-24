@@ -91,7 +91,7 @@ main:
   ; tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
   socket AF_INET, SOCK_STREAM, 0
   cmp rax, 0
-  jl error
+  jl .error
   mov qword [sockfd], rax 
 
   write STDOUT, bind_trace_msg, bind_trace_msg_len
@@ -101,31 +101,31 @@ main:
 
   bind [sockfd], servaddr.sin_family, sizeof_servaddr
   cmp rax, 0
-  jl error
+  jl .error
 
   write STDOUT, listen_trace_msg, listen_trace_msg_len
   listen [sockfd], MAX_CONN 
   cmp rax, 0
-  jl error
+  jl .error
 
-next_request:
+.next_request:
   write STDOUT, accept_trace_msg, accept_trace_msg_len
   accept [sockfd], cliaddr.sin_family, cliaddr_len
   cmp rax, 0
-  jl error
+  jl .error
 
   mov qword [connfd], rax
 
   write [connfd], response, response_len
 
-  jmp next_request
+  jmp .next_request
 
   write STDOUT, ok_msg, ok_msg_len
   close [connfd]
   close [sockfd]
   exit EXIT_SUCCESS
 
-error:
+.error:
   write STDERR, err_msg, err_msg_len
   close [connfd]  ; if connfd is invalid, close will just return -1, don't really care though
   close [sockfd]  ; if sockfd is invalid, close will just return -1, don't really care though
