@@ -1,5 +1,6 @@
 format ELF64 executable
 
+SYS_read equ 0
 SYS_write equ 1
 SYS_close equ 3
 SYS_socket equ 41
@@ -19,6 +20,11 @@ EXIT_SUCCESS equ 0
 EXIT_FAILURE equ 1
 
 MAX_CONN equ 5 ;; arbitrarily set max # of connections to 5
+
+REQUEST_CAP equ 128 * 1024  ;; arbitrary limit for http request
+                            ;; http 1.1 doesn't have a specific
+                            ;; limit, but taking some inspo from
+                            ;; tsoding, we set it to 128K for now
 
 macro syscall1 number, a
 {
@@ -47,6 +53,11 @@ macro syscall3 number, a, b, c
 macro write fd, buf, count
 {
   syscall3 SYS_write, fd, buf, count
+}
+
+macro read fd, buf, count
+{
+  syscall3 SYS_read, fd, buf, count
 }
 
 macro exit code
@@ -115,6 +126,15 @@ main:
   jl .error
 
   mov qword [connfd], rax
+
+  read [connfd], request, REQUEST_CAP
+  cmp rax, 0
+  jl .error
+
+  mov [request_len], rax
+  mov [request_cur], request
+
+  write STDOUT, [request_cur], [request_len]
 
   write [connfd], response, response_len
 
@@ -201,3 +221,8 @@ accept_trace_msg_len = $ - accept_trace_msg
 
 err_msg db "ERROR: Could not start webserver", 0xa
 err_msg_len = $ - err_msg
+
+;; rq "reserves" space without init value, dq declares *and* inits
+request_len rq 1
+request_cur rq 1  ; will point to start of curr request
+request     rb REQUEST_CAP
