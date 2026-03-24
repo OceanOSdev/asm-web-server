@@ -95,8 +95,8 @@ macro accept fd, addr, addrLen
 segment readable executable
 entry main
 main:
-  write STDOUT, start_msg, start_msg_len
-  write STDOUT, socket_trace_msg, socket_trace_msg_len
+  write STDOUT, start, start_len
+  write STDOUT, socket_trace, socket_trace_len
 
   ; create the socket
   ; tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -105,7 +105,7 @@ main:
   jl .error
   mov qword [sockfd], rax 
 
-  write STDOUT, bind_trace_msg, bind_trace_msg_len
+  write STDOUT, bind_trace, bind_trace_len
   mov word [servaddr.sin_family], AF_INET
   mov word [servaddr.sin_port], 0x391b ; hex(6969) = 0x1b39, but we need to reverse the order
   mov dword [servaddr.sin_addr], INADDR_ANY
@@ -114,13 +114,13 @@ main:
   cmp rax, 0
   jl .error
 
-  write STDOUT, listen_trace_msg, listen_trace_msg_len
+  write STDOUT, listen_trace, listen_trace_len
   listen [sockfd], MAX_CONN 
   cmp rax, 0
   jl .error
 
 .next_request:
-  write STDOUT, accept_trace_msg, accept_trace_msg_len
+  write STDOUT, accept_trace, accept_trace_len
   accept [sockfd], cliaddr.sin_family, cliaddr_len
   cmp rax, 0
   jl .error
@@ -140,13 +140,13 @@ main:
 
   jmp .next_request
 
-  write STDOUT, ok_msg, ok_msg_len
+  write STDOUT, ok, ok_len
   close [connfd]
   close [sockfd]
   exit EXIT_SUCCESS
 
 .error:
-  write STDERR, err_msg, err_msg_len
+  write STDERR, err_msg, err_len
   close [connfd]  ; if connfd is invalid, close will just return -1, don't really care though
   close [sockfd]  ; if sockfd is invalid, close will just return -1, don't really care though
   exit EXIT_FAILURE
@@ -201,26 +201,26 @@ response db "HTTP/1.1 200 OK", 0xd, 0xa ; in http new lines are \r\n
          db "</html>", 0xa
 response_len = $ - response
 
-start_msg db "INFO: Starting web server", 0xa
-start_msg_len = $ - start_msg
+start db "INFO: Starting web server", 0xa
+start_len = $ - start
 
-ok_msg db "INFO: OK!", 0xa
-ok_msg_len = $ - ok_msg
+ok db "INFO: OK!", 0xa
+ok_len = $ - ok
 
-socket_trace_msg db "INFO: Creating a socket...", 0xa
-socket_trace_msg_len = $ - socket_trace_msg
+socket_trace db "INFO: Creating a socket...", 0xa
+socket_trace_len = $ - socket_trace
 
-bind_trace_msg db "INFO: Binding the socket...", 0xa
-bind_trace_msg_len = $ - bind_trace_msg
+bind_trace db "INFO: Binding the socket...", 0xa
+bind_trace_len = $ - bind_trace
 
-listen_trace_msg db "INFO: Listening to the socket...", 0xa
-listen_trace_msg_len = $ - listen_trace_msg
+listen_trace db "INFO: Listening to the socket...", 0xa
+listen_trace_len = $ - listen_trace
 
-accept_trace_msg db "INFO: Waiting for client connections...", 0xa
-accept_trace_msg_len = $ - accept_trace_msg 
+accept_trace db "INFO: Waiting for client connections...", 0xa
+accept_trace_len = $ - accept_trace
 
 err_msg db "ERROR: Could not start webserver", 0xa
-err_msg_len = $ - err_msg
+err_len = $ - err_msg
 
 ;; rq "reserves" space without init value, dq declares *and* inits
 request_len rq 1
