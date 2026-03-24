@@ -1,0 +1,12 @@
+# I have a copy of these locally to reference how structs are layed out
+musl-1.2.6.tar.gz
+musl-1.2.6/
+
+# scratchpad file
+structs_and_notes.txt
+
+webserver
+
+# My nvim asm lsp keeps creating this file when I open web.s
+# (might just uninstall the asm lsp, doesn't seem that helpful)
+web
