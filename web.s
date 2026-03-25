@@ -1,132 +1,103 @@
 format ELF64 executable
 
-SYS_write equ 1
-SYS_close equ 3
-SYS_socket equ 41
-SYS_accept equ 43
-SYS_bind equ 49
-SYS_listen equ 50
-SYS_exit equ 60
-
-INADDR_ANY equ 0
-SOCK_STREAM equ 1
-AF_INET equ 2
-
-STDOUT equ 1
-STDERR equ 2
-
-EXIT_SUCCESS equ 0
-EXIT_FAILURE equ 1
+include "macros_and_syscalls.inc"
 
 MAX_CONN equ 5 ;; arbitrarily set max # of connections to 5
 
-macro syscall1 number, a
-{
-  mov rax, number
-  mov rdi, a
-  syscall
-}
-
-macro syscall2 number, a, b
-{
-  mov rax, number
-  mov rdi, a
-  mov rsi, b
-  syscall
-}
-
-macro syscall3 number, a, b, c
-{
-  mov rax, number
-  mov rdi, a
-  mov rsi, b
-  mov rdx, c
-  syscall
-}
-
-macro write fd, buf, count
-{
-  syscall3 SYS_write, fd, buf, count
-}
-
-macro exit code
-{
-  syscall1 SYS_exit, code
-}
-
-macro socket domain, type, protocol
-{
-  syscall3 SYS_socket, domain, type, protocol
-}
-
-;; int bind(int fd, const struct sockaddr *addr, socklen_t len)
-macro bind sockfd, addr, addrlen
-{
-  syscall3 SYS_bind, sockfd, addr, addrlen
-}
-
-macro close sockfd
-{
-  syscall1 SYS_close, sockfd
-}
-
-macro listen sockfd, backlog
-{
-  syscall2 SYS_listen, sockfd, backlog
-}
-
-;; int accept(int sockfd, struct sockaddr *addr, socklen_t *addrLen)
-macro accept fd, addr, addrLen
-{
-  syscall3 SYS_accept, fd, addr, addrLen
-}
+REQUEST_CAP equ 128 * 1024  ;; arbitrary limit for http request
+                            ;; http 1.1 doesn't have a specific
+                            ;; limit, but taking some inspo from
+                            ;; tsoding, we set it to 128K for now
 
 segment readable executable
+
+include "helpers.inc"
+
 entry main
 main:
-  write STDOUT, start_msg, start_msg_len
-  write STDOUT, socket_trace_msg, socket_trace_msg_len
+  write STDOUT, start, start_len
+  write STDOUT, socket_trace, socket_trace_len
 
   ; create the socket
   ; tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
   socket AF_INET, SOCK_STREAM, 0
   cmp rax, 0
-  jl error
+  jl .error
   mov qword [sockfd], rax 
 
-  write STDOUT, bind_trace_msg, bind_trace_msg_len
+  write STDOUT, bind_trace, bind_trace_len
   mov word [servaddr.sin_family], AF_INET
   mov word [servaddr.sin_port], 0x391b ; hex(6969) = 0x1b39, but we need to reverse the order
   mov dword [servaddr.sin_addr], INADDR_ANY
 
   bind [sockfd], servaddr.sin_family, sizeof_servaddr
   cmp rax, 0
-  jl error
+  jl .error
 
-  write STDOUT, listen_trace_msg, listen_trace_msg_len
+  write STDOUT, listen_trace, listen_trace_len
   listen [sockfd], MAX_CONN 
   cmp rax, 0
-  jl error
+  jl .error
 
-next_request:
-  write STDOUT, accept_trace_msg, accept_trace_msg_len
+.next_request:
+  write STDOUT, accept_trace, accept_trace_len
   accept [sockfd], cliaddr.sin_family, cliaddr_len
   cmp rax, 0
-  jl error
+  jl .error
 
   mov qword [connfd], rax
 
-  write [connfd], response, response_len
+  read [connfd], request, REQUEST_CAP
+  cmp rax, 0
+  jl .error
 
-  jmp next_request
+  mov [request_len], rax
+  mov [request_cur], request
 
-  write STDOUT, ok_msg, ok_msg_len
+  write STDOUT, [request_cur], [request_len]
+
+  ; check if we're handling a GET request
+  funcall4 starts_with, [request_cur], [request_len], get, get_len
+  cmp rax, 0
+  jg .handle_get_req
+
+.handle_get_req:
+  add [request_cur], get_len
+  sub [request_len], get_len
+
+  funcall4 starts_with, [request_cur], [request_len], index_route, index_route_len
+  cmp rax, 0
+  jg .serve_index_page
+
+  funcall4 starts_with, [request_cur], [request_len], favicon_route, favicon_route_len
+  cmp rax, 0
+  jg .serve_no_content
+
+  jmp .serve_error_404
+  
+.serve_no_content:
+  write STDOUT, no_content_response, no_content_response_len
+  write [connfd], no_content_response, no_content_response_len
+  close [connfd]
+  jmp .next_request
+
+.serve_index_page:
+  write [connfd], index_response, index_response_len
+  close [connfd]
+  jmp .next_request
+
+.serve_error_404:
+  write [connfd], error_404, error_404_len
+  close [connfd]
+  jmp .next_request
+
+  write STDOUT, ok, ok_len
   close [connfd]
   close [sockfd]
   exit EXIT_SUCCESS
 
-error:
-  write STDERR, err_msg, err_msg_len
+.error:
+  write STDERR, err_msg, err_len
   close [connfd]  ; if connfd is invalid, close will just return -1, don't really care though
   close [sockfd]  ; if sockfd is invalid, close will just return -1, don't really care though
   exit EXIT_FAILURE
@@ -165,39 +136,77 @@ sizeof_servaddr = $ - servaddr.sin_family
 cliaddr servaddr_in
 cliaddr_len dd sizeof_servaddr
 
+;; ------- HTTP Responses ------- 
+no_content_response db "HTTP/1.1 204 No Content", 0xd, 0xa
+                    db "Content-Length: 0", 0xd, 0xa
+                    db "Connection: close", 0xd, 0xa
+                    db 0xd, 0xa
+no_content_response_len = $ - no_content_response 
+
+index_response      db "HTTP/1.1 200 OK", 0xd, 0xa ; in http new lines are \r\n
+                    db "Content-Type: text/html; charset=utf-8", 0xd, 0xa
+                    db "Connection: close", 0xd, 0xa
+                    db 0xd, 0xa
+                    db "<html>", 0xd, 0xa
+                    db "<head>", 0xd, 0xa
+                    db "<title>Woah</title>", 0xd, 0xa
+                    db "</head>", 0xd, 0xa
+                    db "<body>", 0xd, 0xa
+                    db "<h1>Hello from flat assembler!</h1>", 0xd, 0xa
+                    db "<p>Woah is this page being served by a web server written in <i>assembly</i>?!</p>", 0xd, 0xa
+                    db "</body>", 0xd, 0xa
+                    db "</html>", 0xa
+index_response_len = $ - index_response 
+
+error_404           db "HTTP/1.1 404 Not Found", 0xd, 0xa
+                    db "Content-Type: text/html; charset=utf-8", 0xd, 0xa
+                    db "Connection: close", 0xd, 0xa
+                    db 0xd, 0xa
+                    db "<html>", 0xd, 0xa
+                    db "<head>", 0xd, 0xa
+                    db "<title>Page not found</title>", 0xd, 0xa
+                    db "</head>", 0xd, 0xa
+                    db "<body>", 0xd, 0xa
+                    db "<h1>404 - Page not found</h1>", 0xd, 0xa
+                    db "<p>Click <a href='/'>here</a> to go back home.</p>", 0xd, 0xa
+                    db "</body>", 0xd, 0xa
+                    db "</html>", 0xa
+error_404_len = $ - error_404
+
 ;; ------- Strings ------- 
-response db "HTTP/1.1 200 OK", 0xd, 0xa ; in http new lines are \r\n
-         db "Content-Type: text/html; charset=utf-8", 0xd, 0xa
-         db "Connection: close", 0xd, 0xa
-         db 0xd, 0xa
-         db "<html>", 0xd, 0xa
-         db "<head>", 0xd, 0xa
-         db "<title>Woah</title>", 0xd, 0xa
-         db "</head>", 0xd, 0xa
-         db "<body>", 0xd, 0xa
-         db "<h1>Hello from flat assembler!</h1>", 0xd, 0xa
-         db "<p>Woah is this page being served by a web server written in <i>assembly</i>?!</p>", 0xd, 0xa
-         db "</body>", 0xd, 0xa
-         db "</html>", 0xa
-response_len = $ - response
+start db "INFO: Starting web server", 0xa
+start_len = $ - start
 
-start_msg db "INFO: Starting web server", 0xa
-start_msg_len = $ - start_msg
+ok db "INFO: OK!", 0xa
+ok_len = $ - ok
 
-ok_msg db "INFO: OK!", 0xa
-ok_msg_len = $ - ok_msg
+socket_trace db "INFO: Creating a socket...", 0xa
+socket_trace_len = $ - socket_trace
 
-socket_trace_msg db "INFO: Creating a socket...", 0xa
-socket_trace_msg_len = $ - socket_trace_msg
+bind_trace db "INFO: Binding the socket...", 0xa
+bind_trace_len = $ - bind_trace
 
-bind_trace_msg db "INFO: Binding the socket...", 0xa
-bind_trace_msg_len = $ - bind_trace_msg
+listen_trace db "INFO: Listening to the socket...", 0xa
+listen_trace_len = $ - listen_trace
 
-listen_trace_msg db "INFO: Listening to the socket...", 0xa
-listen_trace_msg_len = $ - listen_trace_msg
-
-accept_trace_msg db "INFO: Waiting for client connections...", 0xa
-accept_trace_msg_len = $ - accept_trace_msg 
+accept_trace db "INFO: Waiting for client connections...", 0xa
+accept_trace_len = $ - accept_trace
 
 err_msg db "ERROR: Could not start webserver", 0xa
-err_msg_len = $ - err_msg
+err_len = $ - err_msg
+
+get db "GET "
+get_len = $ - get
+
+index_route db "/ "
+index_route_len = $ - index_route
+
+favicon_route db "/favicon.ico "
+favicon_route_len = $ - favicon_route 
+
+;; ------- Reserved Memory ------- 
+
+;; rq "reserves" space without init value, dq declares *and* inits
+request_len rq 1
+request_cur rq 1  ; will point to start of curr request
+request     rb REQUEST_CAP
