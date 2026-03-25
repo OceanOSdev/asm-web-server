@@ -186,6 +186,12 @@ cliaddr servaddr_in
 cliaddr_len dd sizeof_servaddr
 
 ;; ------- Strings ------- 
+no_content_response db "HTTP/1.1 204 No Content", 0xd, 0xa
+                    db "Content-Length: 0", 0xd, 0xa
+                    db "Connection: close", 0xd, 0xa
+                    db 0xd, 0xa
+no_content_response_len = $ - no_content_response 
+
 response db "HTTP/1.1 200 OK", 0xd, 0xa ; in http new lines are \r\n
          db "Content-Type: text/html; charset=utf-8", 0xd, 0xa
          db "Connection: close", 0xd, 0xa
