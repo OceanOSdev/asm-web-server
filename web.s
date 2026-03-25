@@ -106,6 +106,8 @@ main:
   funcall4 starts_with, [request_cur], [request_len], favicon_route, favicon_route_len
   cmp rax, 0
   jg .serve_no_content
+
+  jmp .serve_error_404
   
 .serve_no_content:
   write STDOUT, no_content_response, no_content_response_len
@@ -114,7 +116,12 @@ main:
   jmp .next_request
 
 .serve_index_page:
-  write [connfd], response, response_len
+  write [connfd], index_response, index_response_len
+  close [connfd]
+  jmp .next_request
+
+.serve_error_404:
+  write [connfd], error_404, error_404_len
   close [connfd]
   jmp .next_request
 
@@ -170,20 +177,35 @@ no_content_response db "HTTP/1.1 204 No Content", 0xd, 0xa
                     db 0xd, 0xa
 no_content_response_len = $ - no_content_response 
 
-response db "HTTP/1.1 200 OK", 0xd, 0xa ; in http new lines are \r\n
-         db "Content-Type: text/html; charset=utf-8", 0xd, 0xa
-         db "Connection: close", 0xd, 0xa
-         db 0xd, 0xa
-         db "<html>", 0xd, 0xa
-         db "<head>", 0xd, 0xa
-         db "<title>Woah</title>", 0xd, 0xa
-         db "</head>", 0xd, 0xa
-         db "<body>", 0xd, 0xa
-         db "<h1>Hello from flat assembler!</h1>", 0xd, 0xa
-         db "<p>Woah is this page being served by a web server written in <i>assembly</i>?!</p>", 0xd, 0xa
-         db "</body>", 0xd, 0xa
-         db "</html>", 0xa
-response_len = $ - response
+index_response      db "HTTP/1.1 200 OK", 0xd, 0xa ; in http new lines are \r\n
+                    db "Content-Type: text/html; charset=utf-8", 0xd, 0xa
+                    db "Connection: close", 0xd, 0xa
+                    db 0xd, 0xa
+                    db "<html>", 0xd, 0xa
+                    db "<head>", 0xd, 0xa
+                    db "<title>Woah</title>", 0xd, 0xa
+                    db "</head>", 0xd, 0xa
+                    db "<body>", 0xd, 0xa
+                    db "<h1>Hello from flat assembler!</h1>", 0xd, 0xa
+                    db "<p>Woah is this page being served by a web server written in <i>assembly</i>?!</p>", 0xd, 0xa
+                    db "</body>", 0xd, 0xa
+                    db "</html>", 0xa
+index_response_len = $ - index_response 
+
+error_404           db "HTTP/1.1 404 Not Found", 0xd, 0xa
+                    db "Content-Type: text/html; charset=utf-8", 0xd, 0xa
+                    db "Connection: close", 0xd, 0xa
+                    db 0xd, 0xa
+                    db "<html>", 0xd, 0xa
+                    db "<head>", 0xd, 0xa
+                    db "<title>Page not found</title>", 0xd, 0xa
+                    db "</head>", 0xd, 0xa
+                    db "<body>", 0xd, 0xa
+                    db "<h1>404 - Page not found</h1>", 0xd, 0xa
+                    db "<p>Click <a href='/'>here</a> to go back home.</p>", 0xd, 0xa
+                    db "</body>", 0xd, 0xa
+                    db "</html>", 0xa
+error_404_len = $ - error_404
 
 ;; ------- Strings ------- 
 start db "INFO: Starting web server", 0xa
