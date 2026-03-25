@@ -90,17 +90,8 @@ main:
 
   write STDOUT, [request_cur], [request_len]
 
-;; Check if text starts with a given prefix
-;;  rdi - void *text
-;;  rsi - size_t text_len
-;;  rdx - void *prefix
-;;  r10 - size_t prefix_len
   ; check if we're handling a GET request
-  mov rdi, [request_cur]
-  mov rsi, [request_len]
-  mov rdx, get
-  mov r10, get_len
-  call starts_with
+  funcall4 starts_with, [request_cur], [request_len], get, get_len
   cmp rax, 0
   jg .handle_get_req
 
@@ -108,19 +99,11 @@ main:
   add [request_cur], get_len
   sub [request_len], get_len
 
-  mov rdi, [request_cur]
-  mov rsi, [request_len]
-  mov rdx, index_route
-  mov r10, index_route_len
-  call starts_with
+  funcall4 starts_with, [request_cur], [request_len], index_route, index_route_len
   cmp rax, 0
   jg .serve_index_page
 
-  mov rdi, [request_cur]
-  mov rsi, [request_len]
-  mov rdx, favicon_route
-  mov r10, favicon_route_len
-  call starts_with
+  funcall4 starts_with, [request_cur], [request_len], favicon_route, favicon_route_len
   cmp rax, 0
   jg .serve_no_content
   
