@@ -93,6 +93,43 @@ macro accept fd, addr, addrLen
 }
 
 segment readable executable
+
+;; Check if text starts with a given prefix
+;;  rdi - void *text
+;;  rsi - size_t text_len
+;;  rdx - void *prefix
+;;  r10 - size_t prefix_len
+starts_with:
+  xor rax, rax
+  xor rbx, rbx
+.next_char:
+  cmp rsi, 0
+  jle .done
+  cmp r10, 0
+  jle .done
+
+  mov al, byte [rdi]
+  mov bl, byte [rdx]
+  cmp rax, rbx
+  jne .done
+
+  dec rsi
+  inc rdi
+  dec r10
+  inc rdx
+  jmp .next_char
+
+.done:
+  cmp r10, 0 ; check if we've consumed the whole prefix
+  je .yes
+.no:
+  mov rax, 0
+  ret
+.yes:
+  mov rax, 1
+  ret
+
+
 entry main
 main:
   write STDOUT, start, start_len
@@ -136,8 +173,49 @@ main:
 
   write STDOUT, [request_cur], [request_len]
 
-  write [connfd], response, response_len
+;; Check if text starts with a given prefix
+;;  rdi - void *text
+;;  rsi - size_t text_len
+;;  rdx - void *prefix
+;;  r10 - size_t prefix_len
+  ; check if we're handling a GET request
+  mov rdi, [request_cur]
+  mov rsi, [request_len]
+  mov rdx, get
+  mov r10, get_len
+  call starts_with
+  cmp rax, 0
+  jg .handle_get_req
 
+.handle_get_req:
+  add [request_cur], get_len
+  sub [request_len], get_len
+
+  mov rdi, [request_cur]
+  mov rsi, [request_len]
+  mov rdx, index_route
+  mov r10, index_route_len
+  call starts_with
+  cmp rax, 0
+  jg .serve_index_page
+
+  mov rdi, [request_cur]
+  mov rsi, [request_len]
+  mov rdx, favicon_route
+  mov r10, favicon_route_len
+  call starts_with
+  cmp rax, 0
+  jg .serve_no_content
+  
+.serve_no_content:
+  write STDOUT, no_content_response, no_content_response_len
+  write [connfd], no_content_response, no_content_response_len
+  close [connfd]
+  jmp .next_request
+
+.serve_index_page:
+  write [connfd], response, response_len
+  close [connfd]
   jmp .next_request
 
   write STDOUT, ok, ok_len
@@ -185,7 +263,7 @@ sizeof_servaddr = $ - servaddr.sin_family
 cliaddr servaddr_in
 cliaddr_len dd sizeof_servaddr
 
-;; ------- Strings ------- 
+;; ------- HTTP Responses ------- 
 no_content_response db "HTTP/1.1 204 No Content", 0xd, 0xa
                     db "Content-Length: 0", 0xd, 0xa
                     db "Connection: close", 0xd, 0xa
@@ -207,6 +285,7 @@ response db "HTTP/1.1 200 OK", 0xd, 0xa ; in http new lines are \r\n
          db "</html>", 0xa
 response_len = $ - response
 
+;; ------- Strings ------- 
 start db "INFO: Starting web server", 0xa
 start_len = $ - start
 
@@ -227,6 +306,17 @@ accept_trace_len = $ - accept_trace
 
 err_msg db "ERROR: Could not start webserver", 0xa
 err_len = $ - err_msg
+
+get db "GET "
+get_len = $ - get
+
+index_route db "/ "
+index_route_len = $ - index_route
+
+favicon_route db "/favicon.ico "
+favicon_route_len = $ - favicon_route 
+
+;; ------- Reserved Memory ------- 
 
 ;; rq "reserves" space without init value, dq declares *and* inits
 request_len rq 1
