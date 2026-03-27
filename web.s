@@ -28,7 +28,7 @@ main:
   je .error_cmd
   cmp byte [rax+1], 'h'     ;; check if argument is help flag
   je .print_usage
-  cmp byte [rax+1], 'd'     ;; bail if the argument isn't '-d' (technically only check prefix but idc)
+  cmp byte [rax+1], 'p'     ;; bail if the argument isn't '-p' (technically only check prefix but idc)
   jne .error_cmd
 
   cmp dword [rsp], 3
