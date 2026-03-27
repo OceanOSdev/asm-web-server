@@ -233,12 +233,6 @@ accept_trace_len = $ - accept_trace
 err_msg db "ERROR: Could not start webserver", 0xa
 err_len = $ - err_msg
 
-help_flag db "-h"
-help_flag_len = $ - help_flag
-
-port_flag db "-p"
-port_flag_len = $ - port_flag 
-
 invalid_port db "ERROR: Invalid port", 0xa
 invalid_port_len = $ - invalid_port  
 
