@@ -31,6 +31,8 @@ main:
   cmp byte [rax+1], 'd'     ;; bail if the argument isn't '-d' (technically only check prefix but idc)
   jne .error_cmd
 
+  cmp dword [rsp], 3
+  jne .error_cmd
   mov rdi, [rsp + 24]
   call str_to_int
   cmp rax, 0
