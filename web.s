@@ -2,7 +2,9 @@ format ELF64 executable
 
 include "macros_and_syscalls.inc"
 
-MAX_CONN equ 5 ;; arbitrarily set max # of connections to 5
+DEFAULT_PORT equ 0x391b     ; hex(6969) = 0x1b39, but we need to reverse the order
+
+MAX_CONN equ 5              ;; arbitrarily set max # of connections to 5
 
 REQUEST_CAP equ 128 * 1024  ;; arbitrary limit for http request
                             ;; http 1.1 doesn't have a specific
@@ -13,8 +15,58 @@ segment readable executable
 
 include "helpers.inc"
 
+;; int str_to_int (const char *str)
+;; rdi = pointer to null terminated string
+;; returns:
+;;    eax = parsed integer
+;;
+;; returns -1 if input cannot be parsed as int
+str_to_int:
+  xor eax, eax
+.str_to_int.loop:
+  movzx edx, byte [rdi]
+  test dl, dl
+  jz .str_to_int.done
+  cmp dl, '0'
+  jl .str_to_int.err
+  cmp dl, '9'
+  jg .str_to_int.err
+  lea eax, [eax + eax*4]
+  lea eax, [eax*2 + edx - '0']
+  inc rdi
+  jmp .str_to_int.loop
+
+.str_to_int.done:
+  ret
+.str_to_int.err:
+  mov rax, -1
+  ret
+
 entry main
 main:
+  mov rbx, DEFAULT_PORT 
+  ; check if any args were passed in
+  cmp dword [rsp], 1
+  je .server_startup
+  mov rax, [rsp + 16]
+  cmp byte [rax], '-'       ;; check if first argument is flag (bail otherwise)
+  jne .error_cmd
+  cmp byte [rax+1], 0       ;; bail if user just passes in '-'
+  je .error_cmd
+  cmp byte [rax+1], 'h'     ;; check if argument is help flag
+  je .print_usage
+  cmp byte [rax+1], 'd'     ;; bail if the argument isn't '-d' (technically only check prefix but idc)
+  jne .error_cmd
+
+  mov rdi, [rsp + 24]
+  call str_to_int
+  cmp rax, 0
+  jl .error_port  
+
+  xchg al, ah
+  mov rbx, rax 
+
+.server_startup:
   write STDOUT, start, start_len
   write STDOUT, socket_trace, socket_trace_len
 
@@ -27,7 +79,7 @@ main:
 
   write STDOUT, bind_trace, bind_trace_len
   mov word [servaddr.sin_family], AF_INET
-  mov word [servaddr.sin_port], 0x391b ; hex(6969) = 0x1b39, but we need to reverse the order
+  mov word [servaddr.sin_port], bx
   mov dword [servaddr.sin_addr], INADDR_ANY
 
   bind [sockfd], servaddr.sin_family, sizeof_servaddr
@@ -102,6 +154,17 @@ main:
   close [sockfd]  ; if sockfd is invalid, close will just return -1, don't really care though
   exit EXIT_FAILURE
 
+.error_cmd:
+  write STDERR, usage, usage_len
+  exit EXIT_FAILURE
+
+.error_port:
+  write STDERR, invalid_port, invalid_port_len
+  exit EXIT_FAILURE
+
+.print_usage:
+  write STDOUT, usage, usage_len
+  exit EXIT_SUCCESS
 
 ;; db - 1 byte
 ;; dw - 2 byte
@@ -194,6 +257,23 @@ accept_trace_len = $ - accept_trace
 
 err_msg db "ERROR: Could not start webserver", 0xa
 err_len = $ - err_msg
+
+help_flag db "-h"
+help_flag_len = $ - help_flag
+
+port_flag db "-p"
+port_flag_len = $ - port_flag 
+
+invalid_port db "ERROR: Invalid port", 0xa
+invalid_port_len = $ - invalid_port  
+
+usage db "Usage: webserver [options]", 0xa
+      db 0xa
+      db "Options:", 0xa
+      db "   -h           Print this help message and exit", 0xa
+      db "   -p <port>    Specify which port for the server to listen to", 0xa
+      db "                (Note: ports 0-1023 require this to be ran w/ sudo)", 0xa
+usage_len = $ - usage
 
 get db "GET "
 get_len = $ - get
