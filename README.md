@@ -33,3 +33,11 @@ $ ./webserver
 ```
 
 The server will be listening on `http://localhost:6969`
+
+Optionally, you can also specify a port:
+
+```sh
+$ ./webserver -d 1234
+```
+
+And the server will be listening on `http://localhost:1234`
